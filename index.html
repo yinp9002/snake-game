@@ -102,6 +102,10 @@
                 <div id="score" class="text-2xl font-bold text-primary">0</div>
             </div>
             <div class="bg-gray-800 rounded-lg px-4 py-2 shadow-lg">
+                <span class="text-gray-400 text-sm">AI Score</span>
+                <div id="aiScore" class="text-2xl font-bold text-secondary">0</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg px-4 py-2 shadow-lg">
                 <span class="text-gray-400 text-sm">High Score</span>
                 <div id="highScore" class="text-2xl font-bold text-accent">0</div>
             </div>
@@ -121,6 +125,9 @@
                     </button>
                     <button id="difficultyBtn" class="btn-3d bg-gray-700 hover:bg-gray-600 text-light font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 flex items-center justify-center gap-2">
                         <i class="fa fa-sliders"></i> Difficulty: <span id="difficultyText">Medium</span>
+                    </button>
+                    <button id="aiToggleBtn" class="btn-3d bg-gray-700 hover:bg-gray-600 text-light font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 flex items-center justify-center gap-2">
+                        <i class="fa fa-android"></i> AI Rival: <span id="aiToggleText">On</span>
                     </button>
                 </div>
             </div>
@@ -177,6 +184,7 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const scoreElement = document.getElementById('score');
+    const aiScoreElement = document.getElementById('aiScore');
     const highScoreElement = document.getElementById('highScore');
     const startScreen = document.getElementById('startScreen');
     const gameOverScreen = document.getElementById('gameOverScreen');
@@ -187,25 +195,32 @@
     const homeBtn = document.getElementById('homeBtn');
     const difficultyBtn = document.getElementById('difficultyBtn');
     const difficultyText = document.getElementById('difficultyText');
+    const aiToggleBtn = document.getElementById('aiToggleBtn');
+    const aiToggleText = document.getElementById('aiToggleText');
     const mobileControls = document.getElementById('mobileControls');
     const trailContainer = document.getElementById('trailContainer');
     
     // Game State
     let snake = [];
+    let aiSnake = [];
     let food = {};
     let gridSize = 20;
     let direction = 'right';
     let nextDirection = 'right';
     let score = 0;
+    let aiScore = 0;
     let highScore = localStorage.getItem('snakeHighScore') || 0;
     let gameSpeed = 150; // ms
     let gameInterval;
     let isGameRunning = false;
     let difficulty = 'medium'; // easy, medium, hard
     let trailEffect = true;
+    let aiDirection = 'left';
+    let aiEnabled = true;
     
     // Set high score on load
     highScoreElement.textContent = highScore;
+    aiToggleText.textContent = aiEnabled ? 'On' : 'Off';
     
     // Set canvas size
     function resizeCanvas() {
@@ -233,11 +248,20 @@
             { x: centerX - gridSize, y: centerY },
             { x: centerX - gridSize * 2, y: centerY }
         ];
+
+        aiSnake = [
+            { x: centerX + gridSize * 5, y: centerY },
+            { x: centerX + gridSize * 6, y: centerY },
+            { x: centerX + gridSize * 7, y: centerY }
+        ];
         
         direction = 'right';
         nextDirection = 'right';
         score = 0;
+        aiScore = 0;
+        aiDirection = 'left';
         scoreElement.textContent = score;
+        aiScoreElement.textContent = aiScore;
         
         // Generate first food
         generateFood();
@@ -247,6 +271,7 @@
         
         // Draw initial state
         drawSnake();
+        if (aiEnabled) drawAiSnake();
         drawFood();
     }
     
@@ -261,11 +286,20 @@
                 y: Math.floor(Math.random() * (canvas.height / gridSize)) * gridSize
             };
             
-            // Check if food is on snake
+            // Check if food is on either snake
             for (let segment of snake) {
                 if (segment.x === food.x && segment.y === food.y) {
                     isFoodOnSnake = true;
                     break;
+                }
+            }
+
+            if (!isFoodOnSnake) {
+                for (let segment of aiSnake) {
+                    if (segment.x === food.x && segment.y === food.y) {
+                        isFoodOnSnake = true;
+                        break;
+                    }
                 }
             }
         } while (isFoodOnSnake);
@@ -309,6 +343,95 @@
             ctx.fillStyle = gradient;
             ctx.fillRect(segment.x, segment.y, gridSize, gridSize);
         }
+    }
+
+    // Draw AI snake
+    function drawAiSnake() {
+        ctx.fillStyle = '#f43f5e';
+        ctx.fillRect(aiSnake[0].x, aiSnake[0].y, gridSize, gridSize);
+
+        for (let i = 1; i < aiSnake.length; i++) {
+            const segment = aiSnake[i];
+            const opacity = Math.max(0.35, 1 - (i / aiSnake.length) * 0.65);
+            ctx.fillStyle = `rgba(244, 63, 94, ${opacity})`;
+            ctx.fillRect(segment.x, segment.y, gridSize, gridSize);
+        }
+    }
+
+    function getNextPosition(head, moveDirection) {
+        if (moveDirection === 'right') return { x: head.x + gridSize, y: head.y };
+        if (moveDirection === 'left') return { x: head.x - gridSize, y: head.y };
+        if (moveDirection === 'up') return { x: head.x, y: head.y - gridSize };
+        return { x: head.x, y: head.y + gridSize };
+    }
+
+    function isCellBlocked(cell, selfSnake) {
+        if (
+            cell.x < 0 ||
+            cell.x >= canvas.width ||
+            cell.y < 0 ||
+            cell.y >= canvas.height
+        ) {
+            return true;
+        }
+
+        for (let i = 0; i < selfSnake.length - 1; i++) {
+            if (selfSnake[i].x === cell.x && selfSnake[i].y === cell.y) return true;
+        }
+
+        for (let segment of snake) {
+            if (segment.x === cell.x && segment.y === cell.y) return true;
+        }
+
+        for (let i = 0; i < aiSnake.length - 1; i++) {
+            if (aiSnake[i].x === cell.x && aiSnake[i].y === cell.y) return true;
+        }
+
+        return false;
+    }
+
+    function chooseAiDirection() {
+        const preferred = [];
+        const aiHead = aiSnake[0];
+
+        if (food.x > aiHead.x) preferred.push('right');
+        if (food.x < aiHead.x) preferred.push('left');
+        if (food.y > aiHead.y) preferred.push('down');
+        if (food.y < aiHead.y) preferred.push('up');
+
+        const allDirections = ['up', 'right', 'down', 'left'];
+        for (let d of allDirections) {
+            if (!preferred.includes(d)) preferred.push(d);
+        }
+
+        for (let d of preferred) {
+            const next = getNextPosition(aiHead, d);
+            if (!isCellBlocked(next, aiSnake)) {
+                aiDirection = d;
+                return;
+            }
+        }
+    }
+
+    function moveAiSnake() {
+        chooseAiDirection();
+        const aiNext = getNextPosition(aiSnake[0], aiDirection);
+
+        if (isCellBlocked(aiNext, aiSnake)) {
+            return false;
+        }
+
+        aiSnake.unshift(aiNext);
+
+        if (aiSnake[0].x === food.x && aiSnake[0].y === food.y) {
+            aiScore += 10;
+            aiScoreElement.textContent = aiScore;
+            generateFood();
+        } else {
+            aiSnake.pop();
+        }
+
+        return true;
     }
     
     // Draw food
@@ -378,10 +501,22 @@
             gameOver();
             return;
         }
+
+        // Move AI snake after player movement
+        if (aiEnabled) {
+            const aiMoved = moveAiSnake();
+
+            // If AI has no safe move, freeze AI for this tick instead of ending the game
+            if (aiMoved && checkAiCollision()) {
+                gameOver();
+                return;
+            }
+        }
         
         // Clear canvas and redraw
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawSnake();
+        if (aiEnabled) drawAiSnake();
         drawFood();
     }
     
@@ -405,7 +540,43 @@
                 return true;
             }
         }
+
+        // Check collision with AI snake
+        if (aiEnabled) {
+            for (let segment of aiSnake) {
+                if (head.x === segment.x && head.y === segment.y) {
+                    return true;
+                }
+            }
+        }
         
+        return false;
+    }
+
+    function checkAiCollision() {
+        const aiHead = aiSnake[0];
+
+        if (
+            aiHead.x < 0 ||
+            aiHead.x >= canvas.width ||
+            aiHead.y < 0 ||
+            aiHead.y >= canvas.height
+        ) {
+            return true;
+        }
+
+        for (let i = 1; i < aiSnake.length; i++) {
+            if (aiHead.x === aiSnake[i].x && aiHead.y === aiSnake[i].y) {
+                return true;
+            }
+        }
+
+        for (let segment of snake) {
+            if (aiHead.x === segment.x && aiHead.y === segment.y) {
+                return true;
+            }
+        }
+
         return false;
     }
     
@@ -509,6 +680,12 @@
             difficultyText.textContent = 'Easy';
         }
     }
+
+    function toggleAiRival() {
+        aiEnabled = !aiEnabled;
+        aiToggleText.textContent = aiEnabled ? 'On' : 'Off';
+        aiScoreElement.parentElement.classList.toggle('opacity-40', !aiEnabled);
+    }
     
     // Handle key presses
     function handleKeyPress(e) {
@@ -588,6 +765,7 @@
         startScreen.classList.remove('hidden');
     });
     difficultyBtn.addEventListener('click', cycleDifficulty);
+    aiToggleBtn.addEventListener('click', toggleAiRival);
     
     // Mobile Control Buttons
     document.getElementById('upBtn').addEventListener('click', () => {
